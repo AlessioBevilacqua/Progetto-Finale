@@ -19,24 +19,37 @@ class FlightsInput(BaseModel):
 
     departure_airport: str = Field(
         description=(
-            "The departure airport IATA code. "
-            "Example: MXP, FCO, BRI."
+            "The IATA code of the departure airport. "
+            "IMPORTANT: This airport MUST be explicitly provided "
+            "by the user. NEVER guess, infer, assume, or invent "
+            "the departure airport from the user's location, city, "
+            "nationality, or any other context. "
+            "If the user has not explicitly specified the departure "
+            "airport, DO NOT call this tool. Ask the user which "
+            "airport they want to depart from. "
+            "Examples: MXP, LIN, FCO, BRI."
         )
     )
 
     arrival_airport: str = Field(
         description=(
-            "The arrival airport IATA code. "
-            "Example: FCO, MXP, BRI."
+            "The IATA code of the arrival airport. "
+            "Use the airport explicitly specified by the user. "
+            "Do not invent an airport. "
+            "Examples: FCO, MXP, BRI."
         )
     )
 
     outbound_date: date = Field(
-        description="The outbound flight date (YYYY-MM-DD)."
+        description=(
+            "The outbound flight date in YYYY-MM-DD format."
+        )
     )
 
     return_date: date = Field(
-        description="The return flight date (YYYY-MM-DD)."
+        description=(
+            "The return flight date in YYYY-MM-DD format."
+        )
     )
 
     adults: Optional[int] = Field(
@@ -67,6 +80,10 @@ def flights_finder(
 ):
     """
     Searches for flights using Google Flights through SerpAPI.
+
+    IMPORTANT:
+    The departure airport must always be explicitly provided
+    by the user. The tool must never guess or infer it.
     """
 
     print("=" * 80)
@@ -74,7 +91,7 @@ def flights_finder(
     print("=" * 80)
 
     # ========================================================
-    # NORMALIZZAZIONE
+    # NORMALIZZAZIONE VALORI
     # ========================================================
 
     if adults is None:
@@ -83,30 +100,80 @@ def flights_finder(
     if children is None:
         children = 0
 
+    # ========================================================
+    # NORMALIZZAZIONE AEROPORTI
+    # ========================================================
+
+    if departure_airport is None:
+        departure_airport = ""
+
+    if arrival_airport is None:
+        arrival_airport = ""
+
     departure_airport = departure_airport.strip().upper()
     arrival_airport = arrival_airport.strip().upper()
 
     # ========================================================
-    # VALIDAZIONE AEROPORTI
+    # VALIDAZIONE AEROPORTO DI PARTENZA
     # ========================================================
 
     if not departure_airport:
+        print(
+            "ERRORE: aeroporto di partenza non specificato."
+        )
+
         return {
             "success": False,
             "error": (
-                "⚠️ Non è stato specificato l'aeroporto "
-                "di partenza."
+                "⚠️ Per poter cercare i voli è necessario "
+                "specificare l'aeroporto di partenza."
             ),
             "flights": [],
             "other_flights": [],
         }
 
+    # ========================================================
+    # VALIDAZIONE AEROPORTO DI ARRIVO
+    # ========================================================
+
     if not arrival_airport:
+        print(
+            "ERRORE: aeroporto di arrivo non specificato."
+        )
+
         return {
             "success": False,
             "error": (
-                "⚠️ Non è stato specificato l'aeroporto "
-                "di arrivo."
+                "⚠️ Per poter cercare i voli è necessario "
+                "specificare l'aeroporto di arrivo."
+            ),
+            "flights": [],
+            "other_flights": [],
+        }
+
+    # ========================================================
+    # VALIDAZIONE FORMATO AEROPORTI
+    # ========================================================
+
+    if len(departure_airport) != 3:
+        return {
+            "success": False,
+            "error": (
+                "⚠️ L'aeroporto di partenza deve essere "
+                "specificato tramite un codice IATA valido "
+                "di 3 lettere, ad esempio MXP, LIN o FCO."
+            ),
+            "flights": [],
+            "other_flights": [],
+        }
+
+    if len(arrival_airport) != 3:
+        return {
+            "success": False,
+            "error": (
+                "⚠️ L'aeroporto di arrivo deve essere "
+                "specificato tramite un codice IATA valido "
+                "di 3 lettere, ad esempio FCO, MXP o BRI."
             ),
             "flights": [],
             "other_flights": [],
@@ -118,7 +185,12 @@ def flights_finder(
 
     today = date.today()
 
+    # --------------------------------------------------------
+    # DATA DI PARTENZA NEL PASSATO
+    # --------------------------------------------------------
+
     if outbound_date < today:
+
         return {
             "success": False,
             "error": (
@@ -131,7 +203,12 @@ def flights_finder(
             "other_flights": [],
         }
 
+    # --------------------------------------------------------
+    # DATA DI RITORNO NEL PASSATO
+    # --------------------------------------------------------
+
     if return_date < today:
+
         return {
             "success": False,
             "error": (
@@ -144,7 +221,12 @@ def flights_finder(
             "other_flights": [],
         }
 
+    # --------------------------------------------------------
+    # RITORNO PRIMA DELLA PARTENZA
+    # --------------------------------------------------------
+
     if return_date < outbound_date:
+
         return {
             "success": False,
             "error": (
@@ -157,13 +239,16 @@ def flights_finder(
         }
 
     # ========================================================
-    # API KEY
+    # API KEY SERPAPI
     # ========================================================
 
     api_key = os.getenv("SERPAPI_API_KEY")
 
     if not api_key:
-        print("SERPAPI_API_KEY non configurata.")
+
+        print(
+            "ERRORE: SERPAPI_API_KEY non configurata."
+        )
 
         return {
             "success": False,
@@ -185,10 +270,16 @@ def flights_finder(
         "hl": "it",
         "gl": "it",
         "currency": "EUR",
+
+        # IMPORTANTE:
+        # Questi valori arrivano dal tool e NON vengono
+        # determinati automaticamente.
         "departure_id": departure_airport,
         "arrival_id": arrival_airport,
+
         "outbound_date": outbound_date.isoformat(),
         "return_date": return_date.isoformat(),
+
         "adults": adults,
         "children": children,
     }
@@ -214,12 +305,16 @@ def flights_finder(
     try:
 
         search = GoogleSearch(query_params)
+
         response = search.get_dict()
 
-        print("SerpAPI response keys:", response.keys())
+        print(
+            "SerpAPI response keys:",
+            response.keys()
+        )
 
         # ====================================================
-        # ERRORE SERPAPI
+        # ERRORE RESTITUITO DA SERPAPI
         # ====================================================
 
         if "error" in response:
@@ -234,8 +329,8 @@ def flights_finder(
             return {
                 "success": False,
                 "error": (
-                    "⚠️ Google Flights non ha trovato risultati "
-                    "per la tratta e le date indicate."
+                    "⚠️ Google Flights non ha trovato "
+                    "risultati per la tratta e le date indicate."
                 ),
                 "details": error_message,
                 "flights": [],
@@ -303,7 +398,9 @@ def flights_finder(
         print("=" * 80)
         print("FLIGHTS FINDER ERROR")
         print("=" * 80)
+
         print(repr(e))
+
         print("=" * 80)
 
         return {

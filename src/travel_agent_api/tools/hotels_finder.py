@@ -18,15 +18,15 @@ load_dotenv()
 class HotelsInput(BaseModel):
 
     q: str = Field(
-        description="Location of the hotel."
+        description="Location where the user wants to find hotels."
     )
 
     check_in_date: date = Field(
-        description="The check-in date (YYYY-MM-DD)."
+        description="Hotel check-in date (YYYY-MM-DD)."
     )
 
     check_out_date: date = Field(
-        description="The check-out date (YYYY-MM-DD)."
+        description="Hotel check-out date (YYYY-MM-DD)."
     )
 
     adults: Optional[int] = Field(
@@ -46,8 +46,7 @@ class HotelsInput(BaseModel):
         description=(
             "Ages of all children. "
             "The number of ages must match the number of children. "
-            "For example, if there are 2 children aged 8 and 10, "
-            "use [8, 10]."
+            "For example, 2 children aged 8 and 10 means [8, 10]."
         )
     )
 
@@ -55,7 +54,7 @@ class HotelsInput(BaseModel):
         default=2,
         ge=2,
         le=5,
-        description="Hotel class from 2 to 5."
+        description="Minimum hotel class from 2 to 5 stars."
     )
 
 
@@ -75,7 +74,21 @@ def hotels_finder(
 ):
     """
     Searches for hotels using Google Hotels through SerpAPI.
+
+    The tool intentionally returns only a small, filtered list
+    of useful hotel information instead of the complete SerpAPI
+    response, so the AI agent can process the results reliably.
     """
+
+    # ========================================================
+    # NORMALIZZAZIONE PARAMETRI
+    # ========================================================
+
+    if adults is None:
+        adults = 1
+
+    if children is None:
+        children = 0
 
     # ========================================================
     # DATA ODIERNA
@@ -90,15 +103,15 @@ def hotels_finder(
     if check_in_date < today:
         return (
             "⚠️ La data di check-in non è valida. "
-            f"La data {check_in_date} è già passata. "
-            f"Inserisci una data a partire da {today}."
+            f"La data {check_in_date.isoformat()} è già passata. "
+            f"Inserisci una data a partire da {today.isoformat()}."
         )
 
     if check_out_date < today:
         return (
             "⚠️ La data di check-out non è valida. "
-            f"La data {check_out_date} è già passata. "
-            f"Inserisci una data a partire da {today}."
+            f"La data {check_out_date.isoformat()} è già passata. "
+            f"Inserisci una data a partire da {today.isoformat()}."
         )
 
     if check_out_date <= check_in_date:
@@ -109,11 +122,8 @@ def hotels_finder(
         )
 
     # ========================================================
-    # CONTROLLO NUMERO BAMBINI
+    # CONTROLLO BAMBINI
     # ========================================================
-
-    if children is None:
-        children = 0
 
     if children > 0:
 
@@ -130,7 +140,6 @@ def hotels_finder(
                 "È necessario specificare l'età di ogni bambino."
             )
 
-        # Controllo che le età siano valide
         for age in children_ages:
 
             if age < 0 or age > 17:
@@ -140,7 +149,6 @@ def hotels_finder(
                 )
 
     else:
-        # Se non ci sono bambini non mandiamo children_ages
         children_ages = None
 
     # ========================================================
@@ -179,11 +187,25 @@ def hotels_finder(
     # ========================================================
 
     if children > 0 and children_ages:
-
         query_params["children_ages"] = ",".join(
             str(age)
             for age in children_ages
         )
+
+    # ========================================================
+    # LOG RICERCA
+    # ========================================================
+
+    print("=" * 80)
+    print("HOTELS FINDER")
+    print("=" * 80)
+
+    print(f"Destinazione: {q}")
+    print(f"Check-in: {check_in_date}")
+    print(f"Check-out: {check_out_date}")
+    print(f"Adulti: {adults}")
+    print(f"Bambini: {children}")
+    print(f"Classe hotel: {hotel_class}")
 
     # ========================================================
     # RICERCA SERPAPI
@@ -195,17 +217,9 @@ def hotels_finder(
 
         results = search.get_dict()
 
-        # ====================================================
-        # LOG
-        # ====================================================
-
-        print("=" * 80)
-        print("hotels_finder")
-        print("=" * 80)
-
         print(
             "SerpAPI response keys:",
-            results.keys()
+            list(results.keys())
         )
 
         # ====================================================
@@ -214,7 +228,10 @@ def hotels_finder(
 
         if "error" in results:
 
-            error_message = results["error"]
+            error_message = results.get(
+                "error",
+                "Errore sconosciuto"
+            )
 
             print(
                 "SERPAPI HOTELS ERROR:",
@@ -223,21 +240,25 @@ def hotels_finder(
 
             return (
                 "⚠️ Non è stato possibile trovare hotel "
-                "per le date e i parametri indicati. "
+                "per i parametri indicati. "
                 "Prova a modificare le date, la destinazione "
                 "o i criteri di ricerca."
             )
 
         # ====================================================
-        # PROPRIETÀ HOTEL
+        # RECUPERO PROPRIETÀ
         # ====================================================
 
-        properties = results.get(
-            "properties",
-            []
-        )
+        properties = results.get("properties", [])
+
+        if not isinstance(properties, list):
+            properties = []
 
         if not properties:
+
+            print(
+                "Nessun hotel trovato."
+            )
 
             return (
                 "⚠️ Non sono stati trovati hotel disponibili "
@@ -245,20 +266,177 @@ def hotels_finder(
             )
 
         # ====================================================
-        # RISULTATI
+        # FILTRAGGIO HOTEL
         # ====================================================
 
         hotels = []
 
         for hotel in properties[:5]:
 
-            hotels.append(hotel)
+            if not isinstance(hotel, dict):
+                continue
+
+            # -----------------------------------------------
+            # NOME
+            # -----------------------------------------------
+
+            name = hotel.get("name")
+
+            if not name:
+                continue
+
+            # -----------------------------------------------
+            # RATING
+            # -----------------------------------------------
+
+            rating = hotel.get("overall_rating")
+
+            # -----------------------------------------------
+            # RECENSIONI
+            # -----------------------------------------------
+
+            reviews = hotel.get("reviews")
+
+            # -----------------------------------------------
+            # CLASSE HOTEL
+            # -----------------------------------------------
+
+            hotel_class_value = hotel.get("hotel_class")
+
+            # -----------------------------------------------
+            # INDIRIZZO
+            # -----------------------------------------------
+
+            address = hotel.get("address")
+
+            # -----------------------------------------------
+            # DESCRIZIONE
+            # -----------------------------------------------
+
+            description = hotel.get("description")
+
+            # -----------------------------------------------
+            # PREZZO PER NOTTE
+            # -----------------------------------------------
+
+            rate_per_night = hotel.get(
+                "rate_per_night",
+                {}
+            )
+
+            if not isinstance(rate_per_night, dict):
+                rate_per_night = {}
+
+            price_per_night = rate_per_night.get(
+                "lowest"
+            )
+
+            # -----------------------------------------------
+            # PREZZO TOTALE
+            # -----------------------------------------------
+
+            total_rate = hotel.get(
+                "total_rate",
+                {}
+            )
+
+            if not isinstance(total_rate, dict):
+                total_rate = {}
+
+            total_price = total_rate.get(
+                "lowest"
+            )
+
+            # -----------------------------------------------
+            # LINK
+            # -----------------------------------------------
+
+            link = hotel.get("link")
+
+            # -----------------------------------------------
+            # COSTRUZIONE RISULTATO
+            # -----------------------------------------------
+
+            filtered_hotel = {
+                "name": name,
+                "rating": rating,
+                "reviews": reviews,
+                "hotel_class": hotel_class_value,
+                "address": address,
+                "price_per_night": price_per_night,
+                "total_price": total_price,
+                "description": description,
+                "link": link,
+            }
+
+            # -----------------------------------------------
+            # RIMOZIONE CAMPI VUOTI
+            # -----------------------------------------------
+
+            filtered_hotel = {
+                key: value
+                for key, value in filtered_hotel.items()
+                if value is not None
+            }
+
+            hotels.append(filtered_hotel)
+
+        # ====================================================
+        # CONTROLLO RISULTATI FILTRATI
+        # ====================================================
+
+        if not hotels:
+
+            print(
+                "Gli hotel trovati da SerpAPI "
+                "non contengono dati utilizzabili."
+            )
+
+            return (
+                "⚠️ Sono stati trovati risultati, "
+                "ma non è stato possibile recuperare "
+                "informazioni utili sugli hotel."
+            )
+
+        # ====================================================
+        # LOG RISULTATI
+        # ====================================================
 
         print(
-            f"Trovati {len(hotels)} hotel."
+            f"Trovati {len(hotels)} hotel utilizzabili."
         )
 
+        for index, hotel in enumerate(
+            hotels,
+            start=1
+        ):
+
+            print(
+                f"{index}. {hotel.get('name')}"
+            )
+
+            if hotel.get("rating") is not None:
+                print(
+                    f"   Rating: {hotel.get('rating')}"
+                )
+
+            if hotel.get("price_per_night") is not None:
+                print(
+                    f"   Prezzo/notte: "
+                    f"{hotel.get('price_per_night')}"
+                )
+
+            if hotel.get("total_price") is not None:
+                print(
+                    f"   Totale: "
+                    f"{hotel.get('total_price')}"
+                )
+
         print("=" * 80)
+
+        # ====================================================
+        # OUTPUT DEL TOOL
+        # ====================================================
 
         return hotels
 
@@ -271,7 +449,11 @@ def hotels_finder(
         print("=" * 80)
         print("HOTELS FINDER ERROR")
         print("=" * 80)
-        print(repr(e))
+
+        print(
+            repr(e)
+        )
+
         print("=" * 80)
 
         return (

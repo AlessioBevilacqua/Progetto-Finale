@@ -123,52 +123,119 @@ def chain_travel_plan(
     """
 
     # ========================================================
+    # INIZIO TOOL
+    # ========================================================
+
+    print("=" * 80)
+    print("chain_travel_plan")
+    print("=" * 80)
+
+    # ========================================================
+    # NORMALIZZAZIONE
+    # ========================================================
+
+    if adults is None:
+        adults = 1
+
+    if children is None:
+        children = 0
+
+    # ========================================================
+    # DEBUG PARAMETRI
+    # ========================================================
+
+    print("-" * 80)
+    print("TRAVEL PLAN PARAMETERS")
+    print(f"Destination:       {destination}")
+    print(f"Start date:        {start_date}")
+    print(f"End date:          {end_date}")
+    print(f"Adults:            {adults}")
+    print(f"Children:          {children}")
+    print(f"Children ages:     {children_ages}")
+    print(f"Travel style:      {travel_style}")
+    print(f"Budget:            €{budget if budget is not None else 'not specified'}")
+    print(f"Activities:        {activities}")
+    print(f"Food restrictions: {food_restriction}")
+    print("-" * 80)
+
+    # ========================================================
     # CONTROLLO DELLE DATE
     # ========================================================
 
     today = date.today()
 
-    # La data di inizio non può essere nel passato
+    # --------------------------------------------------------
+    # DATA DI INIZIO NEL PASSATO
+    # --------------------------------------------------------
+
     if start_date < today:
-        return (
+
+        error_message = (
             "⚠️ Le date del viaggio non sono valide. "
             f"La data di inizio ({start_date}) è già passata. "
             f"Inserisci una data di partenza a partire da {today}."
         )
 
-    # La data di fine non può essere nel passato
+        print("TRAVEL PLAN ERROR:", error_message)
+        print("=" * 80)
+
+        return error_message
+
+    # --------------------------------------------------------
+    # DATA DI FINE NEL PASSATO
+    # --------------------------------------------------------
+
     if end_date < today:
-        return (
+
+        error_message = (
             "⚠️ Le date del viaggio non sono valide. "
             f"La data di fine ({end_date}) è già passata. "
             f"Inserisci una data di fine a partire da {today}."
         )
 
-    # La fine del viaggio non può essere prima dell'inizio
+        print("TRAVEL PLAN ERROR:", error_message)
+        print("=" * 80)
+
+        return error_message
+
+    # --------------------------------------------------------
+    # DATA FINE PRIMA DELLA DATA INIZIO
+    # --------------------------------------------------------
+
     if end_date < start_date:
-        return (
+
+        error_message = (
             "⚠️ Le date del viaggio non sono valide. "
             "La data di fine non può essere precedente "
             "alla data di inizio."
         )
 
+        print("TRAVEL PLAN ERROR:", error_message)
+        print("=" * 80)
+
+        return error_message
+
     # ========================================================
     # CONTROLLO BAMBINI
     # ========================================================
 
-    if children is None:
-        children = 0
-
     if children > 0:
 
         if not children_ages:
-            return (
+
+            error_message = (
                 "⚠️ Sono stati indicati dei bambini, "
                 "ma non sono state specificate le loro età."
             )
 
+            print("TRAVEL PLAN ERROR:", error_message)
+            print("=" * 80)
+
+            return error_message
+
         if len(children_ages) != children:
-            return (
+
+            error_message = (
                 f"⚠️ Sono stati indicati {children} bambini, "
                 f"ma sono state specificate "
                 f"{len(children_ages)} età. "
@@ -176,15 +243,27 @@ def chain_travel_plan(
                 "al numero dei bambini."
             )
 
+            print("TRAVEL PLAN ERROR:", error_message)
+            print("=" * 80)
+
+            return error_message
+
         for age in children_ages:
 
             if age < 0 or age > 17:
-                return (
+
+                error_message = (
                     f"⚠️ L'età del bambino ({age}) non è valida. "
                     "L'età deve essere compresa tra 0 e 17 anni."
                 )
 
+                print("TRAVEL PLAN ERROR:", error_message)
+                print("=" * 80)
+
+                return error_message
+
     else:
+
         children_ages = None
 
     # ========================================================
@@ -286,13 +365,36 @@ Requirements:
         result = structured_model.invoke(prompt)
 
         # ====================================================
-        # LOG
+        # RISULTATO
         # ====================================================
 
-        print("=" * 80)
-        print("chain_travel_plan")
-        print("=" * 80)
-        print(result)
+        print("-" * 80)
+        print("TRAVEL PLAN GENERATED SUCCESSFULLY")
+        print("-" * 80)
+
+        if isinstance(result, TravelPlanOutput):
+
+            print(
+                f"Giorni generati: {len(result.travel_plan)}"
+            )
+
+            print()
+
+            for index, day in enumerate(
+                result.travel_plan,
+                start=1
+            ):
+
+                print(f"Giorno {index}")
+                print(f"  Mattina:     {day.morning}")
+                print(f"  Pomeriggio:  {day.afternoon}")
+                print(f"  Sera:        {day.evening}")
+                print()
+
+        else:
+
+            print(result)
+
         print("=" * 80)
 
         return result
